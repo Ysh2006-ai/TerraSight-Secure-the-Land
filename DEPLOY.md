@@ -55,12 +55,26 @@ This guide explains how to deploy the TerraSight application to Vercel.
 4.  **Deploy**:
     Click **"Deploy"**. Vercel will build the project and deploy it. Any future pushes to the `main` branch will automatically trigger a new deployment.
 
+## Environment Variables
+
+This project uses environment variables (e.g., for Sentinel Hub API). When deploying to Vercel, you must set these variables in your Vercel Project Settings.
+
+1.  Go to your Vercel Project Dashboard.
+2.  Navigate to **Settings** -> **Environment Variables**.
+3.  Add the variables defined in your `.env` file (e.g., `VITE_SENTINEL_CLIENT_ID`, `VITE_SENTINEL_CLIENT_SECRET`, etc.).
+
 ## Common Issues
 
--   **Routing issues**: If you encounter 404 errors when refreshing pages other than the home page, ensure the `vercel.json` file is present in the root directory with the following content:
+-   **Routing issues**: If you encounter 404 errors when refreshing pages other than the home page, ensure the `vercel.json` file is present in the root directory.
+-   **API Proxy**: This project uses a proxy for Sentinel Hub API calls. The `vercel.json` file should contain the following configuration to handle both SPA routing and API proxying:
+
     ```json
     {
       "rewrites": [
+        {
+          "source": "/api/sentinel/:path*",
+          "destination": "https://services.sentinel-hub.com/:path*"
+        },
         {
           "source": "/(.*)",
           "destination": "/index.html"
