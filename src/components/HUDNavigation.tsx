@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Globe, Database, Brain, Map as MapIcon, ShieldAlert, FileText, Activity, HelpCircle } from 'lucide-react'
+import { Globe, Map as MapIcon, ShieldAlert, Activity, HelpCircle } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import Logo from '../assets/Logo.png'
 
