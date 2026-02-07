@@ -1,37 +1,171 @@
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useLoader } from '@react-three/fiber'
 import { useScroll, Stars } from '@react-three/drei'
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, Suspense } from 'react'
 import * as THREE from 'three'
+import { TextureLoader } from 'three'
+
+const earthVertexShader = `
+varying vec2 vUv;
+varying vec3 vNormal;
+varying vec3 vPosition;
+
+void main() {
+  vUv = uv;
+  vNormal = normalize(normalMatrix * normal);
+  vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`
+
+const earthFragmentShader = `
+uniform sampler2D dayTexture;
+uniform sampler2D nightTexture;
+uniform sampler2D specularMap;
+uniform sampler2D normalMap;
+uniform vec3 sunDirection;
+
+varying vec2 vUv;
+varying vec3 vNormal;
+varying vec3 vPosition;
+
+void main() {
+  vec3 viewDirection = normalize(-vPosition);
+  vec3 normal = normalize(vNormal);
+  vec3 sunDir = normalize(sunDirection);
+  
+  // Normal map perturbation (simple approximation for sphere)
+  // Note: For a perfect normal map on a sphere we'd need tangent/bitangent attributes, 
+  // but for a globe this simple perturbation often suffices or we can skip if complex.
+  // Actually, let's keep it simple first to avoid tangent artifacts. 
+  // We'll use the normal map for "texture details" in mixing if not full displacement.
+  
+  // Day/Night mixing factor
+  // Smooth the transition for a "twilight" feel
+  float dotProd = dot(normal, sunDir);
+  float mixFactor = smoothstep(-0.25, 0.25, dotProd);
+
+  // Sample textures
+  vec3 dayColor = texture2D(dayTexture, vUv).rgb;
+  vec3 nightColor = texture2D(nightTexture, vUv).rgb;
+  vec3 specMapColor = texture2D(specularMap, vUv).rgb;
+  
+  // Enhance night lights: make them pop more
+  // Night lights usually look yellow/orange-ish from space, allow tinting if texture is white
+  // nightColor *= vec3(1.0, 0.9, 0.6); 
+
+  // Specular reflection (Sun on ocean)
+  // Mask specularity by continent (specularMap is black on land)
+  vec3 reflectDir = reflect(-sunDir, normal);
+  float spec = pow(max(dot(viewDirection, reflectDir), 0.0), 64.0) * specMapColor.r;
+  vec3 specularColor = vec3(1.0, 1.0, 0.9) * spec * 0.8;
+
+  // Fresnel / Rim Light (Atmospheric scattering on the ground)
+  // Adds a blue-ish haze on edges looking at the earth
+  float fresnel = pow(1.0 - max(dot(viewDirection, normal), 0.0), 4.0);
+  vec3 atmosphereColor = vec3(0.3, 0.6, 1.0) * fresnel * 0.5 * mixFactor; // Only visible on day side mostly
+
+  // Combine
+  vec3 finalDayColor = dayColor + specularColor + atmosphereColor;
+  
+  // Night side should be dark but with city lights
+  // We can add a tiny bit of blue ambient to night side so it's not pitch black
+  vec3 nightAmbient = vec3(0.01, 0.02, 0.05); 
+  vec3 finalNightColor = nightColor * 2.0 + nightAmbient; // Boost lights
+
+  vec3 finalColor = mix(finalNightColor, finalDayColor, mixFactor);
+
+  gl_FragColor = vec4(finalColor, 1.0);
+
+  // Color grading / Tone mapping
+  // Increase contrast slightly
+  gl_FragColor.rgb = pow(gl_FragColor.rgb, vec3(1.1)); 
+}
+`
+
+const atmosphereVertexShader = `
+varying vec3 vNormal;
+void main() {
+  vNormal = normalize(normalMatrix * normal);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`
+
+const atmosphereFragmentShader = `
+varying vec3 vNormal;
+void main() {
+  // Softer, more realistic outer glow (Rayleigh scattering)
+  float intensity = pow(0.65 - dot(vNormal, vec3(0, 0, 1.0)), 4.0);
+  // Color: Light atmospheric blue
+  gl_FragColor = vec4(0.4, 0.7, 1.0, 1.0) * intensity * 2.0;
+}
+`
+
+function Atmosphere() {
+    return (
+        <mesh scale={[1.2, 1.2, 1.2]}>
+            <sphereGeometry args={[2.5, 64, 64]} />
+            <shaderMaterial
+                vertexShader={atmosphereVertexShader}
+                fragmentShader={atmosphereFragmentShader}
+                blending={THREE.AdditiveBlending}
+                side={THREE.BackSide}
+                transparent={true}
+                depthWrite={false}
+            />
+        </mesh>
+    )
+}
 
 function Earth() {
     const meshRef = useRef<THREE.Group>(null)
+    const earthMeshRef = useRef<THREE.Mesh>(null)
+    const cloudsRef = useRef<THREE.Mesh>(null)
+
     const scroll = useScroll()
 
-    // Use memo for geometry to avoid recreation
-    const globeGeometry = useMemo(() => new THREE.IcosahedronGeometry(2, 24), []) // Smoother sphere
+    // Added Normal Map for detail
+    const [colorMap, normalMap, specularMap, cloudsMap, nightMap] = useLoader(TextureLoader, [
+        'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_atmos_2048.jpg',
+        'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_normal_2048.jpg',
+        'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_specular_2048.jpg',
+        'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_clouds_1024.png',
+        'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_lights_2048.png'
+    ])
+
+    const uniforms = useMemo(() => ({
+        dayTexture: { value: colorMap },
+        nightTexture: { value: nightMap },
+        specularMap: { value: specularMap },
+        normalMap: { value: normalMap },
+        sunDirection: { value: new THREE.Vector3(5, 3, 5).normalize() }
+    }), [colorMap, nightMap, specularMap, normalMap])
 
     useFrame((_, delta) => {
         if (!meshRef.current) return
 
-        // Base loop rotation (faster for more dynamism)
-        meshRef.current.rotation.y += delta * 0.08
+        // Base loop rotation
+        meshRef.current.rotation.y += delta * 0.05
+
+        // Cloud rotation
+        if (cloudsRef.current) {
+            cloudsRef.current.rotation.y += delta * 0.02
+        }
 
         // Scroll interactions
         const offset = scroll.offset
 
         // More dramatic dynamic rotation based on scroll
-        meshRef.current.rotation.x = offset * Math.PI * 0.5
-        meshRef.current.rotation.z = offset * Math.PI * 0.2
+        meshRef.current.rotation.x = offset * Math.PI * 0.2
+        meshRef.current.rotation.z = offset * Math.PI * 0.1
 
         // Smooth Scale transition
-        // Start normal, zoom in Middle, Zoom out End
         const scale = 1 + Math.sin(offset * Math.PI) * 0.2
         meshRef.current.scale.set(scale, scale, scale)
 
         // Position "flythrough" feel
         meshRef.current.position.z = Math.sin(offset * Math.PI * 1.5) * 3
 
-        // Section specific moves (e.g., rapid spin on data ingestion)
+        // Section specific moves
         if (scroll.visible(1 / 4, 2 / 4)) {
             meshRef.current.rotation.y += delta * 1.5
         }
@@ -39,47 +173,57 @@ function Earth() {
 
     return (
         <group ref={meshRef}>
-            {/* Main Globe - Darker, High Tech */}
-            <mesh geometry={globeGeometry}>
-                <meshStandardMaterial
-                    color="#0B101B"
-                    emissive="#000000"
-                    roughness={0.4}
-                    metalness={0.8}
-                    flatShading={false}
+            {/* Earth Surface with Custom Day/Night Shader */}
+            <mesh ref={earthMeshRef}>
+                <sphereGeometry args={[2.5, 64, 64]} />
+                <shaderMaterial
+                    uniforms={uniforms}
+                    vertexShader={earthVertexShader}
+                    fragmentShader={earthFragmentShader}
                 />
             </mesh>
-
-            {/* Wireframe Overlay - Pulsing Effect would be cool, but static for now */}
-            <mesh scale={[1.002, 1.002, 1.002]} geometry={globeGeometry}>
-                <meshBasicMaterial color="#00ff9d" wireframe transparent opacity={0.15} />
+            {/* Clouds Layer */}
+            <mesh ref={cloudsRef}>
+                <sphereGeometry args={[2.53, 64, 64]} />
+                <meshStandardMaterial
+                    map={cloudsMap}
+                    transparent={true}
+                    opacity={0.8}
+                    blending={THREE.AdditiveBlending}
+                    side={THREE.DoubleSide}
+                    alphaMap={cloudsMap}
+                />
             </mesh>
+            <Atmosphere />
 
-            {/* Secondary Wireframe (Cyan) for depth */}
-            <mesh scale={[1.01, 1.01, 1.01]} geometry={globeGeometry}>
-                <meshBasicMaterial color="#00f3ff" wireframe transparent opacity={0.05} />
-            </mesh>
+            {/* Satellites and Orbits - Constellation Pattern */}
+            {/* Polar Orbit - Scanning */}
+            <group rotation={[0, 0, Math.PI / 2]}>
+                <OrbitRing radius={3.2} color="#00ff9d" opacity={0.4} />
+                <Satellite radius={3.2} speed={1.0} phase={1} color="#00ff9d" size={0.08} />
+            </group>
 
-            {/* Atmosphere Glow */}
-            <mesh scale={[1.2, 1.2, 1.2]}>
-                <sphereGeometry args={[2, 64, 64]} />
-                <meshBasicMaterial color="#00f3ff" transparent opacity={0.1} side={THREE.BackSide} blending={THREE.AdditiveBlending} />
-            </mesh>
-
-            {/* Satellites and Orbits */}
+            {/* Inclined Orbit 1 - GPS Style */}
             <group rotation={[0.5, 0.5, 0]}>
-                <OrbitRing radius={3} color="#00ff9d" opacity={0.1} />
-                <Satellite radius={3} speed={0.8} phase={0} color="#00ff9d" size={0.08} />
+                <OrbitRing radius={3.8} color="#00f3ff" opacity={0.2} />
+                <Satellite radius={3.8} speed={0.7} phase={2} color="#00f3ff" size={0.06} />
+                <Satellite radius={3.8} speed={0.7} phase={4} color="#00f3ff" size={0.06} />
             </group>
 
-            <group rotation={[-0.4, 0.2, 0]}>
-                <OrbitRing radius={3.5} color="#00f3ff" opacity={0.05} />
-                <Satellite radius={3.5} speed={0.6} phase={2} color="#00f3ff" size={0.06} />
+            {/* Inclined Orbit 2 - Cross Coverage */}
+            <group rotation={[-0.5, 0.5, 0]}>
+                <OrbitRing radius={4.2} color="#ffbe0b" opacity={0.15} />
+                <Satellite radius={4.2} speed={0.5} phase={3} color="#ffbe0b" size={0.05} />
             </group>
 
-            <group rotation={[0.8, -0.4, 0.2]}>
-                <OrbitRing radius={2.8} color="#ffbe0b" opacity={0.05} />
-                <Satellite radius={2.8} speed={1.2} phase={4} color="#ffbe0b" size={0.05} />
+            {/* Equatorial - Geosynchronous feel */}
+            <group rotation={[Math.PI / 6, 0, 0]}>
+                <OrbitRing radius={5.0} color="#ffffff" opacity={0.1} />
+            </group>
+
+            {/* Low Earth Orbit Cluster */}
+            <group rotation={[0.2, 0.2, 0.2]}>
+                <OrbitRing radius={2.8} color="#00ff9d" opacity={0.1} />
             </group>
         </group>
     )
@@ -88,8 +232,9 @@ function Earth() {
 function OrbitRing({ radius, color = "#ffffff", opacity = 0.1 }: { radius: number, color?: string, opacity?: number }) {
     return (
         <mesh rotation={[Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[radius, radius + 0.02, 64]} />
-            <meshBasicMaterial color={color} transparent opacity={opacity} side={THREE.DoubleSide} />
+            {/* TorusGeometry for a thin line: radius, tubeRadius, radialSegments, tubularSegments */}
+            <torusGeometry args={[radius, 0.002, 16, 128]} />
+            <meshBasicMaterial color={color} transparent opacity={opacity} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
         </mesh>
     )
 }
@@ -102,16 +247,14 @@ function Satellite({
     inclination = 0,
     phase = 0,
     color = "#cccccc",
-    size = 0.1,
-    type = 'comm' // 'comm' | 'spy' | 'gps'
+    size = 0.1
 }: {
     radius?: number,
     speed?: number,
     inclination?: number,
     phase?: number,
     color?: string,
-    size?: number,
-    type?: 'comm' | 'spy' | 'gps'
+    size?: number
 }) {
     const satelliteRef = useRef<THREE.Group>(null)
 
@@ -193,7 +336,9 @@ export const Scene = () => {
             <pointLight position={[10, 10, 10]} intensity={2.0} color="#ffffff" />
             <ItemLight />
             <Stars radius={300} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-            <Earth />
+            <Suspense fallback={null}>
+                <Earth />
+            </Suspense>
         </>
     )
 }
