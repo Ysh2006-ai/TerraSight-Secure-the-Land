@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/sentinel/:path*",
+      "destination": "https://services.sentinel-hub.com/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
