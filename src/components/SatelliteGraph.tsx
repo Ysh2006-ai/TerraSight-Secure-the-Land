@@ -1,20 +1,49 @@
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine } from 'recharts';
 import { useSatelliteData } from '../hooks/useSatelliteData';
-import { Satellite } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { Satellite, CalendarClock } from 'lucide-react';
+import { format, parseISO, addDays } from 'date-fns';
 
-const SatelliteGraph = () => {
+interface SatelliteGraphProps {
+    mockFuture?: boolean;
+    isEscalated?: boolean;
+}
+
+const SatelliteGraph = ({ mockFuture, isEscalated }: SatelliteGraphProps) => {
     const { data, loading, error } = useSatelliteData();
 
     if (loading) return <div className="h-full flex items-center justify-center text-brand-green/50 font-mono animate-pulse">Acquiring signal...</div>;
     if (error) return <div className="h-full flex items-center justify-center text-red-500 font-mono">Signal Lost</div>;
 
+    // Generate Mock Future Data
+    const generateFutureData = (lastDateStr: string) => {
+        const lastDate = parseISO(lastDateStr); // Use the last actual data point's date
+        const futurePoints = [];
+
+        for (let i = 1; i <= 30; i += 5) { // Generate points every 5 days for 30 days
+            const date = addDays(lastDate, i);
+            futurePoints.push({
+                date: format(date, 'yyyy-MM-dd'), // Keep original date format for consistency
+                // If escalated: NDVI declines/stays low, SAR increases/stays high
+                // If not escalated: NDVI increases, SAR decreases
+                ndvi: isEscalated ? (0.2 + Math.random() * 0.1) : (0.4 + (i * 0.01)),
+                sar: isEscalated ? (-15 + Math.random() * 2) : (-10 - (i * 0.1)), // Adjusted SAR range for consistency
+                isFuture: true
+            });
+        }
+        return futurePoints;
+    };
+
+    const lastDataPoint = data[data.length - 1];
+    const displayData = (mockFuture && lastDataPoint)
+        ? [...data, ...generateFutureData(lastDataPoint.date)]
+        : data;
+
     return (
         <div className="w-full h-full p-4">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-display font-bold text-white flex items-center gap-2">
-                    <Satellite size={18} className="text-brand-cyan" />
-                    Spectral Analysis
+                    {mockFuture ? <CalendarClock size={18} className="text-purple-400" /> : <Satellite size={18} className="text-brand-cyan" />}
+                    {mockFuture ? "Predictive Analysis (+30 Days)" : "Spectral Analysis"}
                 </h3>
                 <div className="flex gap-4 text-xs font-mono">
                     <div className="flex items-center gap-1 text-brand-green">
@@ -27,7 +56,7 @@ const SatelliteGraph = () => {
             </div>
             <div className="h-[250px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={data}>
+                    <AreaChart data={displayData}>
                         <defs>
                             <linearGradient id="colorNdvi" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="#00ff9d" stopOpacity={0.3} />
@@ -37,6 +66,9 @@ const SatelliteGraph = () => {
                                 <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.3} />
                                 <stop offset="95%" stopColor="#00f3ff" stopOpacity={0} />
                             </linearGradient>
+                            <pattern id="diagonalHatch" patternUnits="userSpaceOnUse" width="4" height="4">
+                                <path d="M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2" stroke="#9333ea" strokeWidth="1" />
+                            </pattern>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
                         <XAxis
@@ -67,6 +99,8 @@ const SatelliteGraph = () => {
                             itemStyle={{ fontSize: 12 }}
                             labelStyle={{ color: '#aaa', marginBottom: 5 }}
                         />
+                        {mockFuture && <ReferenceLine x={lastDataPoint?.date} stroke="purple" strokeDasharray="3 3" label={{ position: 'top', value: 'NOW', fill: 'purple', fontSize: 10 }} />}
+
                         <Area
                             yAxisId="left"
                             type="monotone"

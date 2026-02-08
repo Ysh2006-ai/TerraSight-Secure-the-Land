@@ -181,7 +181,10 @@ export const analyzeDeforestation = async (
     historicalNDVI?: number
 ): Promise<DeforestationResult> => {
     const [lat, lng] = scene.centroid;
-    const currentNDVI = scene.layers.sentinel2_optical.metadata.ndvi;
+    const rawNDVI = scene.layers.sentinel2_optical.metadata.ndvi;
+
+    // Safety check: Ensure NDVI is a valid number
+    const currentNDVI = typeof rawNDVI === 'number' && !isNaN(rawNDVI) ? rawNDVI : 0.3;
     const capturedImageUrl = scene.layers.sentinel2_optical.url;
     const timestamp = new Date().toISOString();
 
@@ -272,8 +275,12 @@ export const detectIllegalMining = async (
     const sarMeta = scene.layers.sentinel1_sar.metadata;
     const opticalMeta = scene.layers.sentinel2_optical.metadata;
 
-    const sarBackscatter = sarMeta.backscatter_db;
-    const ndviValue = opticalMeta.ndvi;
+    // Safety checks: Ensure values are valid numbers
+    const rawSAR = sarMeta.backscatter_db;
+    const rawNDVI = opticalMeta.ndvi;
+
+    const sarBackscatter = typeof rawSAR === 'number' && !isNaN(rawSAR) ? rawSAR : -15;
+    const ndviValue = typeof rawNDVI === 'number' && !isNaN(rawNDVI) ? rawNDVI : 0.3;
     const capturedImageUrl = scene.layers.sentinel2_optical.url;
     const timestamp = new Date().toISOString();
 

@@ -315,11 +315,11 @@ export const fetchSentinelImage = async (lat: number, lng: number): Promise<stri
             }]
         },
         output: {
-            width: 512,
-            height: 512,
+            width: 1024,
+            height: 1024,
             responses: [{
                 identifier: "default",
-                format: { type: "image/jpeg" }
+                format: { type: "image/png" }
             }]
         },
         evalscript: EVALSCRIPT_TRUE_COLOR
@@ -333,7 +333,7 @@ export const fetchSentinelImage = async (lat: number, lng: number): Promise<stri
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`,
-                'Accept': 'image/jpeg'
+                'Accept': 'image/png'
             },
             body: JSON.stringify(requestBody)
         });

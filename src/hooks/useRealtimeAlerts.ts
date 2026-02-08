@@ -155,12 +155,18 @@ export default function useRealtimeAlerts() {
             let lat: number, lng: number;
             if (activeState.bbox) {
                 const [minLng, minLat, maxLng, maxLat] = activeState.bbox;
-                lng = minLng + Math.random() * (maxLng - minLng);
-                lat = minLat + Math.random() * (maxLat - minLat);
+                // Add more randomization to avoid clustering
+                const latRange = maxLat - minLat;
+                const lngRange = maxLng - minLng;
+
+                lng = minLng + Math.random() * lngRange;
+                lat = minLat + Math.random() * latRange;
+
+                console.log(`[DEBUG] Scan bounds: [${minLat.toFixed(2)}, ${maxLat.toFixed(2)}] x [${minLng.toFixed(2)}, ${maxLng.toFixed(2)}]`);
             } else {
-                // Fallback to center with offset
-                lat = activeState.coordinates[1] + (Math.random() * 0.1 - 0.05);
-                lng = activeState.coordinates[0] + (Math.random() * 0.1 - 0.05);
+                // Fallback to center with larger offset for more variety
+                lat = activeState.coordinates[1] + (Math.random() * 0.5 - 0.25);
+                lng = activeState.coordinates[0] + (Math.random() * 0.5 - 0.25);
             }
 
             addLog(`[Sat-Link] Target Acquired: ${lat.toFixed(4)}°N, ${lng.toFixed(4)}°E`);

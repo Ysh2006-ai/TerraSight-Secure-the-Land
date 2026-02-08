@@ -58,5 +58,46 @@ export const authService = {
 
     isAuthenticated: (): boolean => {
         return !!localStorage.getItem('token');
+    },
+
+    signUp: async (email: string, password: string): Promise<AuthResponse> => {
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+        });
+
+        if (error) throw error;
+        if (!data.session || !data.user) {
+            // If email confirmation is required, session might be null. 
+            // For demo, we assume auto-confirm or we handle the "check email" state.
+            // But for now, let's just return a mock user state if session is missing 
+            // (or throw if we strictly want immediate login).
+            if (data.user && !data.session) {
+                // Return user without token - frontend handles "Check Email" message
+                throw new Error('Please check your email to confirm your account.');
+            }
+            throw new Error('Signup failed: No session created');
+        }
+
+        const user: User = authService.mapSessionUser(data.user);
+
+        return {
+            token: data.session.access_token,
+            user
+        };
+    },
+
+    mapSessionUser: (user: any): User => {
+        const roleValue = user.user_metadata?.role;
+        const validRoles: User['role'][] = ['admin', 'officer', 'analyst', 'public'];
+        const role: User['role'] = validRoles.includes(roleValue) ? roleValue : 'public';
+
+        return {
+            id: user.id,
+            name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+            role,
+            avatar: user.user_metadata?.avatar,
+            email: user.email
+        };
     }
 };
