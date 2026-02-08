@@ -40,9 +40,9 @@ export const SettingsPage = () => {
     const [seniorEmail, setSeniorEmail] = useState('admin@ministry.gov');
 
     // EmailJS Config State
-    const [serviceId, setServiceId] = useState('service_bgu3mnc');
-    const [templateId, setTemplateId] = useState('template_4en0wvm');
-    const [publicKey, setPublicKey] = useState('H_VoaK-bh-LDAebpt');
+    const [serviceId, setServiceId] = useState('service_equyfcj');
+    const [templateId, setTemplateId] = useState('template_l61kefl');
+    const [publicKey, setPublicKey] = useState('YnVtgq3O5DL1wdLNX');
 
     const [saved, setSaved] = useState(false);
 
